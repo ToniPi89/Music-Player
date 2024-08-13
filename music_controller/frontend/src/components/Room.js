@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Grid, Button, Typography } from "@mui/material";
 import CreateRoomPage from "./CreateRoomPage";
+import MusicPlayer from "./MusicPlayer";
 
 function Room({ leaveRoomCallback }) {
   const { roomCode } = useParams();
@@ -11,6 +12,8 @@ function Room({ leaveRoomCallback }) {
     guestCanPause: false,
     isHost: false,
     showSettings: false,
+    spotifyAuthenticated: false,
+    song: {}
   });
 
   useEffect(() => {
@@ -28,6 +31,9 @@ function Room({ leaveRoomCallback }) {
             guestCanPause: data.guest_can_pause,
             isHost: data.is_host,
           }));
+          if (data.is_host) {
+            authenticateSpotify();
+          }
         }
       } catch (error) {
         console.error("Failed to fetch room details:", error);
@@ -36,6 +42,65 @@ function Room({ leaveRoomCallback }) {
 
     fetchRoomDetails();
   }, [roomCode, navigate, leaveRoomCallback]);
+
+  const authenticateSpotify = () => {
+    fetch("/spotify/is_authenticated")
+      .then((response) => response.json())
+      .then((data) => {
+        setState((prevState) => ({ ...prevState, spotifyAuthenticated: data.status }));
+        if (!data.status) {
+          fetch("/spotify/get-auth-url")
+            .then((response) => response.json())
+            .then((data) => {
+              window.location.replace(data.url);
+            });
+        }
+      })
+      .catch((error) => {
+        console.error("Error authenticating Spotify:", error);
+      });
+  };
+
+  const getCurrentSong = () => {
+    fetch("/spotify/current-song")
+      .then((response) => {
+        if (response.ok) {
+          return response.json();
+        } else {
+          return {}; // Handle errors or empty states
+        }
+      })
+      .then((data) => {
+        setState((prevState) => ({ ...prevState, song: data }));
+        console.log(data);
+      })
+      .catch((error) => {
+        console.error("Failed to fetch current song:", error);
+      });
+  };
+
+  useEffect(() => {
+    if (state.spotifyAuthenticated) {
+      getCurrentSong();
+    }
+  }, [state.spotifyAuthenticated]);
+
+  useEffect(() => {
+    let intervalId;
+
+    if (state.spotifyAuthenticated) {
+      getCurrentSong(); // Initial fetch
+
+      // Set up polling
+      intervalId = setInterval(getCurrentSong, 1000); // Poll every 1 seconds
+    }
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId); // Clean up interval on component unmount
+      }
+    };
+  }, [state.spotifyAuthenticated]);
 
   const leaveButtonPressed = async () => {
     try {
@@ -102,6 +167,7 @@ function Room({ leaveRoomCallback }) {
             Code: {roomCode}
           </Typography>
         </Grid>
+        <MusicPlayer {...state.song} />
         <Grid item xs={12} align="center">
           <Typography variant="h6" component="h6">
             Votes: {state.votesToSkip}
